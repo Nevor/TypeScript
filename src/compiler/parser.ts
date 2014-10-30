@@ -1779,6 +1779,8 @@ module ts {
                     return parseTupleType();
                 case SyntaxKind.OpenParenToken:
                     return parseParenType();
+                case SyntaxKind.StringLiteral:
+                    return parseStringLiteralType();
                 default:
                     if (isIdentifier()) {
                         return parseTypeReference();
@@ -1800,6 +1802,7 @@ module ts {
                 case SyntaxKind.OpenBracketToken:
                 case SyntaxKind.LessThanToken:
                 case SyntaxKind.NewKeyword:
+                case SyntaxKind.StringLiteral:
                     return true;
                 case SyntaxKind.OpenParenToken:
                     // Only consider '(' the start of a type if followed by ')', '...', an identifier, a modifier,
@@ -1822,6 +1825,13 @@ module ts {
                 type = finishNode(node);
             }
             return type;
+        }
+
+        function parseStringLiteralType() : TypeNode {
+          var node = <StringLiteralTypeNode>createNode(SyntaxKind.StringLiteralType);
+          node.text = scanner.getTokenValue();
+          nextToken();
+          return finishNode(node);
         }
 
         function parseUnionType(): TypeNode {

@@ -157,6 +157,7 @@ module ts {
         TupleType,
         UnionType,
         ParenType,
+        StringLiteralType,
         // Expression
         ArrayLiteral,
         ObjectLiteral,

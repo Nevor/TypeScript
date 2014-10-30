@@ -1646,7 +1646,8 @@ module ts {
                 // Widening of property assignments is handled by checkObjectLiteral, exclude them here
                 if (declaration.kind !== SyntaxKind.PropertyAssignment) {
                     var unwidenedType = type;
-                    type = getWidenedType(type);
+                    // Widen StringLiteralType to stringType when the type is infered
+                    type = getWidenedType(type, /* suppressNoImplicitAnyErrors */ false, /* widenStringLiteral */ true);
                     if (type !== unwidenedType) {
                         checkImplicitAny(type);
                     }
@@ -2985,6 +2986,8 @@ module ts {
                     return booleanType;
                 case SyntaxKind.VoidKeyword:
                     return voidType;
+                case SyntaxKind.StringLiteralType:
+                    return getTypeFromStringLiteral(<StringLiteralTypeNode>node);
                 case SyntaxKind.StringLiteral:
                     return getTypeFromStringLiteral(<StringLiteralTypeNode>node);
                 case SyntaxKind.TypeReference:
@@ -3876,12 +3879,15 @@ module ts {
         }
 
         /* If we are widening on a literal, then we may need to the 'node' parameter for reporting purposes */
-        function getWidenedType(type: Type, suppressNoImplicitAnyErrors?: boolean): Type {
+        function getWidenedType(type: Type, suppressNoImplicitAnyErrors?: boolean, widenStringLiteral?: boolean): Type {
             if (type.flags & (TypeFlags.Undefined | TypeFlags.Null)) {
                 return anyType;
             }
             if (type.flags & TypeFlags.Union) {
                 return getWidenedTypeOfUnion(type);
+            }
+            if (widenStringLiteral && type.flags & TypeFlags.StringLiteral) {
+                return stringType;
             }
             if (isTypeOfObjectLiteral(type)) {
                 return getWidenedTypeOfObjectLiteral(type);
@@ -3892,7 +3898,7 @@ module ts {
             return type;
 
             function getWidenedTypeOfUnion(type: Type): Type {
-                return getUnionType(map((<UnionType>type).types, t => getWidenedType(t, suppressNoImplicitAnyErrors)));
+                return getUnionType(map((<UnionType>type).types, t => getWidenedType(t, suppressNoImplicitAnyErrors, widenStringLiteral)));
             }
 
             function getWidenedTypeOfObjectLiteral(type: Type): Type {
@@ -3902,7 +3908,7 @@ module ts {
                     var propTypeWasWidened: boolean = false;
                     forEach(properties, p => {
                         var propType = getTypeOfSymbol(p);
-                        var widenedType = getWidenedType(propType);
+                        var widenedType = getWidenedType(propType, /* suppressNoImplicitAnyErrors*/ false, widenStringLiteral);
                         if (propType !== widenedType) {
                             propTypeWasWidened = true;
                             if (!suppressNoImplicitAnyErrors && compilerOptions.noImplicitAny && getInnermostTypeOfNestedArrayTypes(widenedType) === anyType) {
@@ -3935,7 +3941,7 @@ module ts {
 
             function getWidenedTypeOfArrayLiteral(type: Type): Type {
                 var elementType = (<TypeReference>type).typeArguments[0];
-                var widenedType = getWidenedType(elementType, suppressNoImplicitAnyErrors);
+                var widenedType = getWidenedType(elementType, suppressNoImplicitAnyErrors, widenStringLiteral);
                 type = elementType !== widenedType ? createArrayType(widenedType) : type;
                 return type;
             }
@@ -6199,7 +6205,7 @@ module ts {
                 case SyntaxKind.NumericLiteral:
                     return numberType;
                 case SyntaxKind.StringLiteral:
-                    return stringType;
+                    return getStringLiteralType(<StringLiteralTypeNode>(<LiteralExpression>node));
                 case SyntaxKind.RegularExpressionLiteral:
                     return globalRegExpType;
                 case SyntaxKind.QualifiedName:
