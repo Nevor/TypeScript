@@ -4196,6 +4196,14 @@ module ts {
             return type;
         }
 
+        function keepAssignableTypes(type : Type, targetType : Type, assumeAssignable: boolean): Type {
+            if(type.flags & TypeFlags.Union) {
+                var types = (<UnionType>type).types;
+                return getUnionType(filter(types, t => assumeAssignable ? isTypeAssignableTo(t, targetType) : !isTypeAssignableTo(t, targetType)));
+            }
+            return type;
+        }
+
         // Check if a given variable is assigned within a given syntax node
         function isVariableAssignedWithin(symbol: Symbol, node: Node): boolean {
             var links = getNodeLinks(node);
@@ -4347,6 +4355,28 @@ module ts {
                 }
             }
 
+            function narrowPropTypeByStringTypeEquality(type : Type, expr: BinaryExpression, assumeTrue: boolean): Type {
+                var left = <PropertyAccess>expr.left;
+                var right = expr.right;
+                var right_t = checkExpression(right);
+                if (left.kind !== SyntaxKind.PropertyAccess || left.left.kind !== SyntaxKind.Identifier || 
+                    !(right_t.flags & TypeFlags.StringLiteral) ||
+                    getResolvedSymbol(<Identifier>left.left) !== symbol) {
+                    return type;
+                }
+                var t = checkPropertyAccess(left);
+                var smallerType = t;
+                if (isTypeAssignableTo(right_t, t)) {
+                    smallerType = right_t;
+                }
+                var dummyProperties: SymbolTable = {};
+                var dummyProperty = <TransientSymbol>createSymbol(SymbolFlags.Property | SymbolFlags.Transient, left.right.text);
+                dummyProperty.type = smallerType;
+                dummyProperties[dummyProperty.name] = dummyProperty;
+                var dummyType = createAnonymousType(undefined, dummyProperties, emptyArray, emptyArray, undefined, undefined);
+                return keepAssignableTypes(type, dummyType, assumeTrue);
+            }
+
             function narrowTypeByAnd(type: Type, expr: BinaryExpression, assumeTrue: boolean): Type {
                 if (assumeTrue) {
                     // The assumed result is true, therefore we narrow assuming each operand to be true.
@@ -4404,7 +4434,11 @@ module ts {
                     case SyntaxKind.BinaryExpression:
                         var operator = (<BinaryExpression>expr).operator;
                         if (operator === SyntaxKind.EqualsEqualsEqualsToken || operator === SyntaxKind.ExclamationEqualsEqualsToken) {
-                            return narrowTypeByEquality(type, <BinaryExpression>expr, assumeTrue);
+                            if((<BinaryExpression>expr).left.kind === SyntaxKind.PropertyAccess) {
+                                return narrowPropTypeByStringTypeEquality(type, <BinaryExpression>expr, assumeTrue);
+                            } else {
+                                return narrowTypeByEquality(type, <BinaryExpression>expr, assumeTrue);
+                            }
                         }
                         else if (operator === SyntaxKind.AmpersandAmpersandToken) {
                             return narrowTypeByAnd(type, <BinaryExpression>expr, assumeTrue);
