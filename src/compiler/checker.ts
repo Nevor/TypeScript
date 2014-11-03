@@ -4200,8 +4200,13 @@ module ts {
             if(type.flags & TypeFlags.Union) {
                 var types = (<UnionType>type).types;
                 return getUnionType(filter(types, t => assumeAssignable ? isTypeAssignableTo(t, targetType) : !isTypeAssignableTo(t, targetType)));
+            } else if(isTypeAssignableTo(type, targetType) && assumeAssignable) {
+                return type;
+            } else if(!isTypeAssignableTo(type, targetType) && !assumeAssignable) {
+                return type;
             }
-            return type;
+            
+            return voidType;
         }
 
         // Check if a given variable is assigned within a given syntax node
@@ -4278,7 +4283,7 @@ module ts {
                 }
                 return false;
             }
-        }
+        }        
 
         // Get the narrowed type of a given symbol at a given location
         function getNarrowedTypeOfSymbol(symbol: Symbol, node: Node) {
