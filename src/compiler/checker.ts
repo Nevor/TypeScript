@@ -4199,13 +4199,13 @@ module ts {
         function keepAssignableTypes(type : Type, targetType : Type, assumeAssignable: boolean): Type {
             if(type.flags & TypeFlags.Union) {
                 var types = (<UnionType>type).types;
-                return getUnionType(filter(types, t => assumeAssignable ? isTypeAssignableTo(t, targetType) : !isTypeAssignableTo(t, targetType)));
-            } else if(isTypeAssignableTo(type, targetType) && assumeAssignable) {
-                return type;
-            } else if(!isTypeAssignableTo(type, targetType) && !assumeAssignable) {
-                return type;
+            } else {
+                var types = [type];
             }
-            
+            var remainingTypes = filter(types, t => assumeAssignable ? isTypeAssignableTo(t, targetType) : !isTypeAssignableTo(t, targetType));
+            if(remainingTypes.length > 0) {
+              return getUnionType(remainingTypes);
+            }
             return voidType;
         }
 
