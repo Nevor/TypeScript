@@ -4196,13 +4196,20 @@ module ts {
             return type;
         }
 
-        function keepAssignableTypes(type : Type, targetType : Type, assumeAssignable: boolean): Type {
+        function keepAssignablePropertyTypes(type : Type, propertyName : string, targetPropertyType : Type, assumeAssignable: boolean): Type {
             if(type.flags & TypeFlags.Union) {
                 var types = (<UnionType>type).types;
             } else {
                 var types = [type];
             }
-            var remainingTypes = filter(types, t => assumeAssignable ? isTypeAssignableTo(t, targetType) : !isTypeAssignableTo(t, targetType));
+            var remainingTypes = filter(types, t => {
+                var propertyType = getTypeOfPropertyOfContextualType(t, propertyName);
+                if(propertyType) {
+                    return assumeAssignable ? isTypeAssignableTo(targetPropertyType, propertyType) : !isTypeAssignableTo(propertyType, targetPropertyType);
+                } else {
+                    return !assumeAssignable;
+                }
+            });
             if(remainingTypes.length > 0) {
               return getUnionType(remainingTypes);
             }
@@ -4322,6 +4329,11 @@ module ts {
                                 }
                             }
                             break;
+                        case SyntaxKind.SwitchStatement:
+                            if (child !== (<SwitchStatement>node).expression) {
+                                narrowedType = narrowTypeInCaseClause(type, <SwitchStatement>node, <CaseOrDefaultClause>child);
+                            }
+                            break;
                     }
                     // Only use narrowed type if construct contains no assignments to variable
                     if (narrowedType !== type) {
@@ -4360,9 +4372,7 @@ module ts {
                 }
             }
 
-            function narrowPropTypeByStringTypeEquality(type : Type, expr: BinaryExpression, assumeTrue: boolean): Type {
-                var left = <PropertyAccess>expr.left;
-                var right = expr.right;
+            function narrowPropTypeByStringTypeEquality(type : Type, left : PropertyAccess, right : Expression, assumeTrue: boolean): Type {
                 var right_t = checkExpression(right);
                 if (left.kind !== SyntaxKind.PropertyAccess || left.left.kind !== SyntaxKind.Identifier || 
                     !(right_t.flags & TypeFlags.StringLiteral) ||
@@ -4374,12 +4384,49 @@ module ts {
                 if (isTypeAssignableTo(right_t, t)) {
                     smallerType = right_t;
                 }
-                var dummyProperties: SymbolTable = {};
-                var dummyProperty = <TransientSymbol>createSymbol(SymbolFlags.Property | SymbolFlags.Transient, left.right.text);
-                dummyProperty.type = smallerType;
-                dummyProperties[dummyProperty.name] = dummyProperty;
-                var dummyType = createAnonymousType(undefined, dummyProperties, emptyArray, emptyArray, undefined, undefined);
-                return keepAssignableTypes(type, dummyType, assumeTrue);
+                var propertyName = left.right.text;
+                return keepAssignablePropertyTypes(type, propertyName, smallerType, assumeTrue);
+            }
+
+            function narrowTypeInCaseClause(type : Type, switchNode : SwitchStatement, caseClause : CaseOrDefaultClause) : Type {
+                var propertyAccess = <PropertyAccess>switchNode.expression;
+                if(switchNode.expression.kind !== SyntaxKind.PropertyAccess || 
+                   getResolvedSymbol(<Identifier>propertyAccess.left) !== symbol) {
+                    console.log("return from alien switch for " + symbol.name);
+                    return type;
+                }
+                var narrowedType = type;
+                var remainingType = type;
+                var typesBeforeBreak : Type[] = [];
+                for (var i = 0; i < switchNode.clauses.length; i++) {
+                    var clause = switchNode.clauses[i];
+                    if (clause.expression) {
+                        narrowedType = narrowPropTypeByStringTypeEquality(remainingType, <PropertyAccess>switchNode.expression, clause.expression, /* assumeTrue */ true);
+                        typesBeforeBreak.push(narrowedType);
+                        narrowedType = getUnionType(typesBeforeBreak);
+                        remainingType = narrowPropTypeByStringTypeEquality(remainingType, <PropertyAccess>switchNode.expression, clause.expression, /* assumeTrue */ false);
+                        
+                    } else {
+                        narrowedType = remainingType;
+                    }
+                    console.log("clause id : " + clause.id + " while waiting for " + caseClause.id);
+                    if (clause.id === caseClause.id) {  
+                        console.log("returning in clause : " + typeToString(narrowedType));
+                        return narrowedType;
+                    }
+                    if(clause.statements && clause.statements.length > 0) {
+                        var statements = clause.statements;
+                        var last = statements[statements.length - 1];
+                        if (last.kind === SyntaxKind.ReturnStatement || 
+                            last.kind === SyntaxKind.BreakStatement) {
+                            typesBeforeBreak = [];   
+                        }
+                    }
+                }
+
+                console.log("attained default clause");
+
+                return narrowedType;
             }
 
             function narrowTypeByAnd(type: Type, expr: BinaryExpression, assumeTrue: boolean): Type {
@@ -4440,7 +4487,8 @@ module ts {
                         var operator = (<BinaryExpression>expr).operator;
                         if (operator === SyntaxKind.EqualsEqualsEqualsToken || operator === SyntaxKind.ExclamationEqualsEqualsToken) {
                             if((<BinaryExpression>expr).left.kind === SyntaxKind.PropertyAccess) {
-                                return narrowPropTypeByStringTypeEquality(type, <BinaryExpression>expr, assumeTrue);
+                                var binary_expr = <BinaryExpression>expr;
+                                return narrowPropTypeByStringTypeEquality(type, <PropertyAccess>binary_expr.left, binary_expr.right, assumeTrue);
                             } else {
                                 return narrowTypeByEquality(type, <BinaryExpression>expr, assumeTrue);
                             }

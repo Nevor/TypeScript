@@ -1240,15 +1240,16 @@ module ts {
         }
 
         // Parses a list of elements
-        function parseList<T extends Node>(kind: ParsingContext, checkForStrictMode: boolean, parseElement: () => T): NodeArray<T> {
+        function parseList<T extends Node>(kind: ParsingContext, checkForStrictMode: boolean, parseElement: (i:number) => T): NodeArray<T> {
             var saveParsingContext = parsingContext;
             parsingContext |= 1 << kind;
             var result = <NodeArray<T>>[];
             result.pos = getNodePos();
             var saveIsInStrictMode = isInStrictMode;
+            var i = 0;
             while (!isListTerminator(kind)) {
                 if (isListElement(kind, /* inErrorRecovery */ false)) {
-                    var element = parseElement();
+                    var element = parseElement(i++);
                     result.push(element);
                     // test elements only if we are not already in strict mode
                     if (!isInStrictMode && checkForStrictMode) {
@@ -2993,25 +2994,27 @@ module ts {
             return node;
         }
 
-        function parseCaseClause(): CaseOrDefaultClause {
+        function parseCaseClause(i: number): CaseOrDefaultClause {
             var node = <CaseOrDefaultClause>createNode(SyntaxKind.CaseClause);
             parseExpected(SyntaxKind.CaseKeyword);
             node.expression = parseExpression();
             parseExpected(SyntaxKind.ColonToken);
             node.statements = parseList(ParsingContext.SwitchClauseStatements, /*checkForStrictMode*/ false, parseStatementAllowingLetDeclaration);
+            node.id = i;
             return finishNode(node);
         }
 
-        function parseDefaultClause(): CaseOrDefaultClause {
+        function parseDefaultClause(i: number): CaseOrDefaultClause {
             var node = <CaseOrDefaultClause>createNode(SyntaxKind.DefaultClause);
             parseExpected(SyntaxKind.DefaultKeyword);
             parseExpected(SyntaxKind.ColonToken);
             node.statements = parseList(ParsingContext.SwitchClauseStatements, /*checkForStrictMode*/ false, parseStatementAllowingLetDeclaration);
+            node.id = i;
             return finishNode(node);
         }
 
-        function parseCaseOrDefaultClause(): CaseOrDefaultClause {
-            return token === SyntaxKind.CaseKeyword ? parseCaseClause() : parseDefaultClause();
+        function parseCaseOrDefaultClause(i: number): CaseOrDefaultClause {
+            return token === SyntaxKind.CaseKeyword ? parseCaseClause(i) : parseDefaultClause(i);
         }
 
         function parseSwitchStatement(): SwitchStatement {

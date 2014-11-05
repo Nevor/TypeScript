@@ -488,6 +488,7 @@ module ts {
     export interface CaseOrDefaultClause extends Node {
         expression?: Expression;
         statements: NodeArray<Statement>;
+        id: number;
     }
 
     export interface LabeledStatement extends Statement {
